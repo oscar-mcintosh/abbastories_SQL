@@ -15,7 +15,7 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
-
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
 --The 'remove_is_following()' function updates the is_following array in the profiles table by removing the author_id when a row is deleted from the following table, provided the user_id exists in the profiles table.

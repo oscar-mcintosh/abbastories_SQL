@@ -13,6 +13,9 @@ EXECUTE FUNCTION update_is_following();
 -- Action: EXECUTE FUNCTION update_is_following()
 -- 	The trigger executes the update_is_following() function after each insert.
 
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
 
 --The 'following_delete_trigger' trigger is designed to execute the remove_is_following() function after each row is deleted from the following table.
 

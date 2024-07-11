@@ -1,4 +1,4 @@
---This SQL script creates a table named posts with various columns and constraints.
+--This script creates the 'posts' table named posts with various columns and constraints.
 CREATE TABLE posts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     post_title TEXT,
@@ -14,11 +14,10 @@ CREATE TABLE posts (
     post_subtitle TEXT
 );
 
+--------------------------------------------------------------------------------------------------------------------------------------------
 
 
-
-
---This script creates a new authors table and populates it with data from the profiles table, but only for profiles where is_author is true.
+--This script creates the 'authors' table and populates it with data from the profiles table, but only for profiles where is_author is true.
 CREATE TABLE authors (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     author_id UUID NOT NULL,
@@ -26,12 +25,17 @@ CREATE TABLE authors (
     last_name VARCHAR(255)
 );
 
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
 -- Populate the authors table with data from the profiles table where is_author is true
 INSERT INTO authors (author_id, first_name, last_name)
-	SELECT id, first_name, last_name
-	FROM profiles
-	WHERE is_author = TRUE;
+SELECT id, first_name, last_name
+FROM profiles
+WHERE is_author = TRUE;
 
+------------------------------------------------------------------------------------------------------------------------------------------------
 
 
 
@@ -43,6 +47,9 @@ CREATE TABLE following (
     followed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+---------------------------------------------------------------------------------------------------------------------------------------------------
+
+
 
 --This script creates the 'comments' table which is designed to store information about comments made by users on posts, including the comment's unique ID, associated post and commenter IDs, text content, and creation timestamp.
 CREATE TABLE comments (
@@ -52,6 +59,8 @@ CREATE TABLE comments (
     comment_text TEXT,
     comment_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+---------------------------------------------------------------------------------------------------------------------------------------------------
 
 
 

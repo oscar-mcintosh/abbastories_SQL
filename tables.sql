@@ -1,74 +1,88 @@
---This script creates the 'posts' table named posts with various columns and constraints.
-CREATE TABLE posts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    post_title TEXT,
-    post_author UUID REFERENCES auth.users(id),
-    post_body TEXT,
-    post_author_name TEXT,
-    testaments TEXT,
-    old_testament_book TEXT,
-    new_testament_book TEXT,
-    post_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    book_name TEXT,
-    post_comments INT[],
-    post_subtitle TEXT
-);
+-- Outer query: used to add spend percentage bucket after calculations are complete
+SELECT 
+    *,
+    
+    -- Categorize customers based on what % of their total gas spend went to CENEX
+    CASE 
+        WHEN cenex_spend_pct BETWEEN 1 AND 24 THEN '1 - 25%'
+        WHEN cenex_spend_pct BETWEEN 25 AND 49 THEN '25 - 50%'
+        WHEN cenex_spend_pct BETWEEN 50 AND 74 THEN '50 - 75%'
+        WHEN cenex_spend_pct BETWEEN 75 AND 100 THEN '75 - 100%'
+        ELSE '0%'  -- Catch any zero or null percentages
+    END AS spend_pct_bucket
 
---------------------------------------------------------------------------------------------------------------------------------------------
+FROM (
+    -- Inner query: does the actual data grouping and calculation
+    SELECT 
+        -- Count of unique customers per group
+        COUNT(DISTINCT ENT_CUSTOMER_ID) AS members,		
 
+        -- Bucket customers by distance from store
+        CASE 
+            WHEN dist <= 5 THEN 'Within 5 miles'
+            WHEN dist <= 10 THEN '5-10 miles'
+            WHEN dist <= 15 THEN '10-15 miles'
+            WHEN dist <= 20 THEN '15-20 miles'
+            ELSE 'Over 20 miles'
+        END AS distance_bucket,
 
---This script creates the 'authors' table and populates it with data from the profiles table, but only for profiles where is_author is true.
-CREATE TABLE authors (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    author_id UUID NOT NULL,
-    first_name VARCHAR(255),
-    last_name VARCHAR(255)
-);
+        -- Bucket customers by age
+        CASE 
+    	    WHEN age < 25 THEN 'Under 25'
+	        WHEN age BETWEEN 25 AND 34 THEN '25-34'
+	        WHEN age BETWEEN 35 AND 44 THEN '35-44'
+	        WHEN age BETWEEN 45 AND 54 THEN '45-54'
+	        WHEN age BETWEEN 55 AND 64 THEN '55-64'
+	        ELSE '65+'
+        END AS age_range,
 
--------------------------------------------------------------------------------------------------------------------------------------------
+        -- Retain additional customer attributes for segmentation
+        book,
+        tob,
+        club_mkt_opt_out,
+        brand,
+        card_tier,
 
+        -- Determine whether transaction is CENEX or NON_CENEX based on presence in merch table
+        CASE 
+            WHEN c.merch_nk_sk IS NOT NULL THEN 'CENEX' 
+            ELSE 'NON_CENEX' 
+        END AS gas_type,    
 
+        -- Sum of spend for CENEX transactions
+        SUM(CASE WHEN c.merch_nk_sk IS NOT NULL THEN tran_amt END) AS cenex_spend,
 
--- Populate the authors table with data from the profiles table where is_author is true
-INSERT INTO authors (author_id, first_name, last_name)
-SELECT id, first_name, last_name
-FROM profiles
-WHERE is_author = TRUE;
+        -- Sum of spend for NON-CENEX transactions
+        SUM(CASE WHEN c.merch_nk_sk IS NULL THEN tran_amt END) AS non_cenex_spend,
 
-------------------------------------------------------------------------------------------------------------------------------------------------
+        -- Compute % of total gas spend that went to CENEX
+        ROUND(
+            SUM(CASE WHEN c.merch_nk_sk IS NOT NULL THEN tran_amt END) 
+            / NULLIF(SUM(tran_amt), 0) * 100, 2
+        ) AS cenex_spend_pct
 
+    FROM om_cstmrs_zip_20240910 a
 
+    -- Join transaction table to bring in customer gas transaction history
+    JOIN edw_spoke..fact_club_cc_tran b 
+    	ON a.club_acct_nk_sk = b.club_acct_nk_sk
 
---This script creates the 'follwing' table that's designed to track which users are following which authors. It includes a unique identifier for each follow action, references to the user and author being followed, and a timestamp indicating when the follow action occurred.
-CREATE TABLE following (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES profiles(id),
-    author_id UUID REFERENCES profiles(id),
-    followed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+    -- Join to merch table to determine if the merchant is a CENEX location
+    LEFT JOIN edw_spoke..dim_merch c
+        ON b.merch_nk_sk = c.merch_nk_sk 
+        AND b.post_dte BETWEEN c.strt_dte AND COALESCE(c.end_dte, CURRENT_DATE)
+        AND c.member_type = 'PROMOTIONAL'
 
----------------------------------------------------------------------------------------------------------------------------------------------------
+    -- Filter to only gas debit transactions over 5 years
+    WHERE b.tran_typ_cd = 'DBT'
+      AND b.merch_mcc IN ('5542', '5541')  -- MCC codes for gas
+      AND b.post_dte BETWEEN '2019-09-13' AND '2024-09-13'
 
+    -- Group by all categorical fields that define each segment
+    GROUP BY 
+        2, 3, 4, 5, 6, 7, 8, gas_type
 
+) x  -- End of subquery
 
---This script creates the 'comments' table which is designed to store information about comments made by users on posts, including the comment's unique ID, associated post and commenter IDs, text content, and creation timestamp.
-CREATE TABLE comments (
-    comment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    post_id UUID REFERENCES posts(id),
-    commenter_id UUID REFERENCES auth.users(id),
-    comment_text TEXT,
-    comment_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
-
----------------------------------------------------------------------------------------------------------------------------------------------------
-
-
-
---This script creates the 'replies' table which is designed to store information about replies made by users to comments, including the reply's unique ID, associated comment and replier IDs, text content, and creation timestamp.
-CREATE TABLE replies (
-    reply_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    comment_id UUID REFERENCES comments(comment_id),
-    replier_id UUID REFERENCES auth.users(id),
-    reply_text TEXT,
-    reply_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
+-- Sort output by proximity and age
+ORDER BY distance_bucket, age_range;
